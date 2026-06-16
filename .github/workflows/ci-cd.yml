@@ -355,19 +355,108 @@ jobs:
           echo "Loadbalancer: trivy-loadbalancer.sarif"
           echo "Results visible in GitHub → Security → Code scanning"
 
-  # ── Deploy (main only) ────────────────────────────────────────────────────────
+  # ── Kubernetes Deploy (kind cluster) ─────────────────────────────────────────
   deploy:
-    name: Deploy
+    name: Deploy to Kubernetes (kind)
     runs-on: ubuntu-latest
     needs: security-scan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: production
 
     steps:
-      - name: Deploy notification
+      - uses: actions/checkout@v4
+
+      - name: Install kind
         run: |
-          echo "Images ready at commit ${{ github.sha }}"
-          echo "  Backend:      ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:sha-${{ github.sha }}"
-          echo "  Frontend:     ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:sha-${{ github.sha }}"
-          echo "  LoadBalancer: ${{ env.REGISTRY }}/${{ env.IMAGE_LOADBALANCER }}:sha-${{ github.sha }}"
-          echo "Add your deployment step here (SSH, kubectl, Render, Railway, etc.)"
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Create kind cluster
+        run: kind create cluster --config k8s/kind-config.yaml --wait 60s
+
+      - name: Install metrics-server (for HPA)
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+          kubectl patch deployment metrics-server -n kube-system \
+            --type=json \
+            -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+
+      - name: Load images into kind
+        run: |
+          docker pull ghcr.io/ketanq4udev/testing_cicd-backend:main
+          docker pull ghcr.io/ketanq4udev/testing_cicd-frontend:main
+          docker pull ghcr.io/ketanq4udev/testing_cicd-loadbalancer:main
+          kind load docker-image ghcr.io/ketanq4udev/testing_cicd-backend:main
+          kind load docker-image ghcr.io/ketanq4udev/testing_cicd-frontend:main
+          kind load docker-image ghcr.io/ketanq4udev/testing_cicd-loadbalancer:main
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/postgres/secret.yaml
+          kubectl apply -f k8s/postgres/pvc.yaml
+          kubectl apply -f k8s/postgres/deployment.yaml
+          kubectl apply -f k8s/backend/deployment.yaml
+          kubectl apply -f k8s/backend/hpa.yaml
+          kubectl apply -f k8s/frontend/deployment.yaml
+          kubectl apply -f k8s/loadbalancer/nginx-config.yaml
+          kubectl apply -f k8s/loadbalancer/deployment.yaml
+          kubectl apply -f k8s/monitoring/
+
+      - name: Wait for deployments to be ready
+        run: |
+          echo "Waiting for postgres..."
+          kubectl rollout status deployment/postgres -n cicd-demo --timeout=120s
+          echo "Waiting for backend..."
+          kubectl rollout status deployment/backend -n cicd-demo --timeout=120s
+          echo "Waiting for loadbalancer..."
+          kubectl rollout status deployment/loadbalancer -n cicd-demo --timeout=60s
+          echo "Waiting for prometheus..."
+          kubectl rollout status deployment/prometheus -n cicd-demo --timeout=60s
+
+      - name: Verify API through NodePort
+        run: |
+          echo "Polling HTTPS on NodePort 30443..."
+          for i in $(seq 1 20); do
+            if curl -sk https://localhost:30443/api/items/ > /dev/null 2>&1; then
+              echo "API reachable on k8s NodePort after $i attempt(s)"
+              break
+            fi
+            if [ "$i" -eq 20 ]; then
+              echo "Timed out — dumping pod status"
+              kubectl get pods -n cicd-demo
+              kubectl describe deployment backend -n cicd-demo
+              exit 1
+            fi
+            echo "Attempt $i/20 — retrying in 5s..."
+            sleep 5
+          done
+          response=$(curl -sk https://localhost:30443/api/items/)
+          echo "API response: $response"
+          echo "$response" | python3 -c "import sys,json; items=json.load(sys.stdin); assert len(items)>=2, 'expected seeded items'"
+          echo "PASS: k8s API returning seeded items"
+
+      - name: Verify HPA is configured
+        run: |
+          kubectl get hpa -n cicd-demo
+          kubectl describe hpa backend-hpa -n cicd-demo
+
+      - name: Show cluster status
+        if: always()
+        run: |
+          echo "===== Pods ====="
+          kubectl get pods -n cicd-demo -o wide
+          echo "===== Services ====="
+          kubectl get svc -n cicd-demo
+          echo "===== HPA ====="
+          kubectl get hpa -n cicd-demo
+
+      - name: Print deploy summary
+        run: |
+          echo "===== Kubernetes Deploy Summary ====="
+          echo "Namespace : cicd-demo"
+          echo "Backend   : $(kubectl get deployment backend -n cicd-demo -o jsonpath='{.status.readyReplicas}') replicas ready"
+          echo "HPA       : min=2 max=10 (CPU 60% / Memory 70%)"
+          echo "Images    : sha-${{ github.sha }}"
