@@ -167,17 +167,26 @@ jobs:
 
       - name: Verify metrics endpoint on backend
         run: |
-          curl -sk https://localhost/api/items/ > /dev/null
-          curl -sk https://localhost/api/items/ > /dev/null
-          curl -sk https://localhost/api/items/ > /dev/null
-          metric=$(curl -sf "http://localhost:9090/api/v1/query?query=http_requests_total" | \
-            python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d['data']['result']))")
-          echo "Prometheus http_requests_total series count: $metric"
-          if [ "$metric" -lt 1 ]; then
-            echo "FAIL: no metrics found in Prometheus"
-            exit 1
-          fi
-          echo "PASS: metrics are flowing into Prometheus"
+          echo "Generating traffic..."
+          for i in $(seq 1 5); do
+            curl -sk https://localhost/api/items/ > /dev/null
+            curl -sk https://localhost/api/items/1 > /dev/null
+          done
+          echo "Waiting up to 40s for Prometheus to scrape (15s interval)..."
+          for i in $(seq 1 8); do
+            metric=$(curl -sf "http://localhost:9090/api/v1/query?query=http_requests_total" | \
+              python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d['data']['result']))")
+            echo "  Attempt $i/8 — series count: $metric"
+            if [ "$metric" -gt 0 ]; then
+              echo "PASS: $metric metric series found in Prometheus"
+              break
+            fi
+            if [ "$i" -eq 8 ]; then
+              echo "FAIL: no metrics found after 40s"
+              exit 1
+            fi
+            sleep 5
+          done
 
       - name: Tear down
         if: always()
