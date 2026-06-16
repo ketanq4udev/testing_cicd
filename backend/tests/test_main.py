@@ -50,3 +50,13 @@ def test_delete_item():
     assert del_res.status_code == 204
     get_res = client.get(f"/api/items/{item_id}")
     assert get_res.status_code == 404
+
+
+def test_stats():
+    res = client.get("/api/items/stats/summary")
+    assert res.status_code == 200
+    data = res.json()
+    assert "total_items" in data
+    assert "items_with_description" in data
+    assert "items_without_description" in data
+    assert data["total_items"] == data["items_with_description"] + data["items_without_description"]

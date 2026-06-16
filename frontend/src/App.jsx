@@ -5,6 +5,7 @@ const API = import.meta.env.VITE_API_URL || ''
 
 function App() {
   const [items, setItems] = useState([])
+  const [stats, setStats] = useState(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState('')
@@ -12,8 +13,12 @@ function App() {
 
   const fetchItems = async () => {
     try {
-      const res = await fetch(`${API}/api/items/`)
-      setItems(await res.json())
+      const [itemsRes, statsRes] = await Promise.all([
+        fetch(`${API}/api/items/`),
+        fetch(`${API}/api/items/stats/summary`),
+      ])
+      setItems(await itemsRes.json())
+      setStats(await statsRes.json())
     } catch {
       setStatus('Failed to load items')
     } finally {
@@ -54,6 +59,17 @@ function App() {
       </header>
 
       <main>
+        {stats && (
+          <section className="card stats">
+            <h2>Stats</h2>
+            <div className="stats-grid">
+              <div className="stat"><span>{stats.total_items}</span>Total</div>
+              <div className="stat"><span>{stats.items_with_description}</span>With Description</div>
+              <div className="stat"><span>{stats.items_without_description}</span>Without Description</div>
+            </div>
+          </section>
+        )}
+
         <section className="card">
           <h2>Add Item</h2>
           <form onSubmit={addItem}>

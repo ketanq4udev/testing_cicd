@@ -49,3 +49,14 @@ def delete_item(item_id: int):
             _items.pop(i)
             return
     raise HTTPException(status_code=404, detail="Item not found")
+
+
+@router.get("/stats/summary")
+def get_stats():
+    total = len(_items)
+    with_desc = sum(1 for item in _items if item["description"])
+    return {
+        "total_items": total,
+        "items_with_description": with_desc,
+        "items_without_description": total - with_desc,
+    }

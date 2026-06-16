@@ -14,3 +14,6 @@ ul li { display: flex; justify-content: space-between; align-items: center; padd
 ul li:last-child { border-bottom: none; }
 button.delete { background: #ef4444; padding: 0.3rem 0.7rem; font-size: 0.8rem; }
 button.delete:hover { background: #dc2626; }
+.stats-grid { display: flex; gap: 1rem; }
+.stat { flex: 1; text-align: center; background: #eff6ff; border-radius: 8px; padding: 0.75rem; }
+.stat span { display: block; font-size: 1.8rem; font-weight: 700; color: #2563eb; }
