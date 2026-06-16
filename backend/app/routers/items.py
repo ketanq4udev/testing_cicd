@@ -1,14 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import List
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models import Item
 
 router = APIRouter(prefix="/items", tags=["items"])
-
-_items: List[dict] = [
-    {"id": 1, "name": "Item One", "description": "First sample item"},
-    {"id": 2, "name": "Item Two", "description": "Second sample item"},
-]
-_next_id = 3
 
 
 class ItemCreate(BaseModel):
@@ -16,45 +12,49 @@ class ItemCreate(BaseModel):
     description: str = ""
 
 
-class Item(ItemCreate):
+class ItemResponse(BaseModel):
     id: int
+    name: str
+    description: str
+
+    model_config = {"from_attributes": True}
 
 
-@router.get("/", response_model=List[Item])
-def list_items():
-    return _items
+@router.get("/", response_model=list[ItemResponse])
+def list_items(db: Session = Depends(get_db)):
+    return db.query(Item).all()
 
 
-@router.get("/{item_id}", response_model=Item)
-def get_item(item_id: int):
-    for item in _items:
-        if item["id"] == item_id:
-            return item
-    raise HTTPException(status_code=404, detail="Item not found")
+@router.get("/{item_id}", response_model=ItemResponse)
+def get_item(item_id: int, db: Session = Depends(get_db)):
+    item = db.query(Item).filter(Item.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
 
 
-@router.post("/", response_model=Item, status_code=201)
-def create_item(payload: ItemCreate):
-    global _next_id
-    item = {"id": _next_id, **payload.model_dump()}
-    _next_id += 1
-    _items.append(item)
+@router.post("/", response_model=ItemResponse, status_code=201)
+def create_item(payload: ItemCreate, db: Session = Depends(get_db)):
+    item = Item(name=payload.name, description=payload.description)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
     return item
 
 
 @router.delete("/{item_id}", status_code=204)
-def delete_item(item_id: int):
-    for i, item in enumerate(_items):
-        if item["id"] == item_id:
-            _items.pop(i)
-            return
-    raise HTTPException(status_code=404, detail="Item not found")
+def delete_item(item_id: int, db: Session = Depends(get_db)):
+    item = db.query(Item).filter(Item.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    db.delete(item)
+    db.commit()
 
 
 @router.get("/stats/summary")
-def get_stats():
-    total = len(_items)
-    with_desc = sum(1 for item in _items if item["description"])
+def stats(db: Session = Depends(get_db)):
+    total = db.query(Item).count()
+    with_desc = db.query(Item).filter(Item.description != "").count()
     return {
         "total_items": total,
         "items_with_description": with_desc,

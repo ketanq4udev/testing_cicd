@@ -75,6 +75,10 @@ jobs:
 
       - name: Start stack with 3 backend replicas
         run: docker compose up -d --build --scale backend=3
+        env:
+          POSTGRES_USER: cicd
+          POSTGRES_PASSWORD: cicd
+          POSTGRES_DB: cicddb
 
       - name: Wait for HTTPS load balancer to be ready
         run: |

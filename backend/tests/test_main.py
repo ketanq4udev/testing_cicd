@@ -1,6 +1,39 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from app.main import app
+from app.database import get_db, Base
+from app.models import Item
+
+SQLITE_URL = "sqlite:///./test_run.db"
+engine = create_engine(SQLITE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def override_get_db():
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@pytest.fixture(autouse=True)
+def setup_db():
+    Base.metadata.create_all(bind=engine)
+    db = TestingSessionLocal()
+    db.add_all([
+        Item(name="Item One", description="First sample item"),
+        Item(name="Item Two", description="Second sample item"),
+    ])
+    db.commit()
+    db.close()
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.clear()
+    Base.metadata.drop_all(bind=engine)
+
 
 client = TestClient(app)
 
@@ -25,9 +58,11 @@ def test_list_items():
 
 
 def test_get_item():
-    res = client.get("/api/items/1")
+    items = client.get("/api/items/").json()
+    item_id = items[0]["id"]
+    res = client.get(f"/api/items/{item_id}")
     assert res.status_code == 200
-    assert res.json()["id"] == 1
+    assert res.json()["id"] == item_id
 
 
 def test_get_item_not_found():
