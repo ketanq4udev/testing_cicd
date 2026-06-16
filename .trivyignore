@@ -1,0 +1,5 @@
+# Trivy ignore file
+# Add CVE IDs here to suppress known-acceptable vulnerabilities.
+# Format: CVE-YYYY-NNNNN
+# Example:
+# CVE-2023-12345  # reason: only affects feature X which we don't use

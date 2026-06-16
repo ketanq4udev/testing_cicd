@@ -167,10 +167,10 @@ jobs:
 
       - name: Verify metrics endpoint on backend
         run: |
-          curl -sf http://localhost/api/items/ > /dev/null
-          curl -sf http://localhost/api/items/ > /dev/null
-          curl -sf http://localhost/api/items/ > /dev/null
-          metric=$(curl -sf http://localhost:9090/api/v1/query?query=http_requests_total | \
+          curl -sk https://localhost/api/items/ > /dev/null
+          curl -sk https://localhost/api/items/ > /dev/null
+          curl -sk https://localhost/api/items/ > /dev/null
+          metric=$(curl -sf "http://localhost:9090/api/v1/query?query=http_requests_total" | \
             python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d['data']['result']))")
           echo "Prometheus http_requests_total series count: $metric"
           if [ "$metric" -lt 1 ]; then
@@ -240,11 +240,113 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ── Security Scan (Trivy) ─────────────────────────────────────────────────────
+  security-scan:
+    name: Trivy Security Scan
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.event_name == 'push'
+
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Filesystem scan: Dockerfiles, configs, dependencies ──
+      - name: Scan repo filesystem (misconfigs + secrets)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - name: Upload filesystem scan results to Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-filesystem
+
+      # ── Image scans ──
+      - name: Scan backend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:${{ github.ref_name }}
+          format: sarif
+          output: trivy-backend.sarif
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Upload backend scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-backend.sarif
+          category: trivy-backend
+
+      - name: Scan frontend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:${{ github.ref_name }}
+          format: sarif
+          output: trivy-frontend.sarif
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Upload frontend scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-frontend.sarif
+          category: trivy-frontend
+
+      - name: Scan loadbalancer image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_LOADBALANCER }}:${{ github.ref_name }}
+          format: sarif
+          output: trivy-loadbalancer.sarif
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Upload loadbalancer scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-loadbalancer.sarif
+          category: trivy-loadbalancer
+
+      - name: Print scan summary
+        if: always()
+        run: |
+          echo "===== Trivy Scan Summary ====="
+          echo "Filesystem : trivy-fs.sarif"
+          echo "Backend    : trivy-backend.sarif"
+          echo "Frontend   : trivy-frontend.sarif"
+          echo "Loadbalancer: trivy-loadbalancer.sarif"
+          echo "Results visible in GitHub → Security → Code scanning"
+
   # ── Deploy (main only) ────────────────────────────────────────────────────────
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    needs: docker-build
+    needs: security-scan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
 
