@@ -1,3 +1,4 @@
+import socket
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import items
@@ -21,4 +22,4 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "healthy"}
+    return {"status": "healthy", "instance": socket.gethostname()}
