@@ -74,19 +74,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Start stack with 3 backend replicas
-        run: docker compose up -d --build --scale backend=3
-
-      - name: Wait for load balancer to be healthy
-        run: |
-          echo "Waiting for services..."
-          for i in $(seq 1 20); do
-            if curl -sf http://localhost/health > /dev/null 2>&1; then
-              echo "Load balancer is up!"
-              break
-            fi
-            echo "Attempt $i/20 — retrying in 5s..."
-            sleep 5
-          done
+        run: docker compose up -d --build --scale backend=3 --wait --timeout 120
 
       - name: Verify load balancer root
         run: |
@@ -97,28 +85,29 @@ jobs:
       - name: Verify API is reachable through load balancer
         run: |
           curl -sf http://localhost/api/items/ | grep -q "Item One"
-          echo "API items endpoint OK"
+          echo "API items endpoint: OK"
 
       - name: Verify load balancing across replicas
         run: |
-          echo "Sending 9 health requests and collecting instance hostnames..."
+          echo "Sending 9 health requests — collecting instance hostnames..."
           instances=""
           for i in $(seq 1 9); do
-            host=$(curl -sf http://localhost/health | python3 -c "import sys,json; print(json.load(sys.stdin)['instance'])")
+            response=$(curl -sf http://localhost/health)
+            host=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin)['instance'])")
             instances="$instances $host"
-            echo "Request $i → instance: $host"
+            echo "  Request $i → $host"
           done
-          unique=$(echo $instances | tr ' ' '\n' | sort -u | wc -l)
-          echo "Unique instances responding: $unique"
+          unique=$(echo $instances | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
+          echo "Unique instances that responded: $unique / 3"
           if [ "$unique" -lt 2 ]; then
-            echo "WARNING: only $unique unique instance(s) responded — expected at least 2"
-          else
-            echo "Load balancing verified: $unique different instances responded"
+            echo "FAIL: load balancing not distributing — only $unique instance(s) responded"
+            exit 1
           fi
+          echo "PASS: load balancing confirmed across $unique instances"
 
       - name: Tear down
         if: always()
-        run: docker compose down
+        run: docker compose down --volumes
 
   # ── Docker Build ──────────────────────────────────────────────────────────────
   docker-build:
