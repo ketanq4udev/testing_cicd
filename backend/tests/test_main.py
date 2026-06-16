@@ -1,10 +1,12 @@
 import pytest
+import fakeredis
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.main import app
 from app.database import get_db, Base
 from app.models import Item
+import app.cache as cache_module
 
 SQLITE_URL = "sqlite:///./test_run.db"
 engine = create_engine(SQLITE_URL, connect_args={"check_same_thread": False})
@@ -20,7 +22,7 @@ def override_get_db():
 
 
 @pytest.fixture(autouse=True)
-def setup_db():
+def setup_db(monkeypatch):
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     db.add_all([
@@ -30,6 +32,10 @@ def setup_db():
     db.commit()
     db.close()
     app.dependency_overrides[get_db] = override_get_db
+
+    fake_redis = fakeredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(cache_module, "_client", fake_redis)
+
     yield
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
@@ -57,6 +63,13 @@ def test_list_items():
     assert len(res.json()) >= 2
 
 
+def test_list_items_cached():
+    client.get("/api/items/")
+    res = client.get("/api/items/")
+    assert res.status_code == 200
+    assert len(res.json()) >= 2
+
+
 def test_get_item():
     items = client.get("/api/items/").json()
     item_id = items[0]["id"]
@@ -76,6 +89,14 @@ def test_create_item():
     data = res.json()
     assert data["name"] == "Test Item"
     assert "id" in data
+
+
+def test_create_invalidates_cache():
+    client.get("/api/items/")
+    client.post("/api/items/", json={"name": "New Item", "description": "fresh"})
+    res = client.get("/api/items/")
+    names = [i["name"] for i in res.json()]
+    assert "New Item" in names
 
 
 def test_delete_item():

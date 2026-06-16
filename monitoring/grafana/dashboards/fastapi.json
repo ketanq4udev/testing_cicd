@@ -70,8 +70,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
-          "color": { "mode": "palette-classic" },
-          "custom": { "thresholdsStyle": { "mode": "area" } }
+          "color": { "mode": "palette-classic" }
         }
       }
     },
@@ -95,10 +94,62 @@
       }
     },
     {
+      "id": 9,
+      "title": "Cache Hit Rate (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "rate(cache_hits_total[1m]) / (rate(cache_hits_total[1m]) + rate(cache_misses_total[1m])) * 100",
+          "legendFormat": "Hit Rate %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 80 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Cache Hits vs Misses (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(rate(cache_hits_total[1m])) by (endpoint)",
+          "legendFormat": "hits: {{ endpoint }}"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(rate(cache_misses_total[1m])) by (endpoint)",
+          "legendFormat": "misses: {{ endpoint }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+    {
       "id": 5,
       "title": "Total Requests",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 24 },
       "targets": [
         {
           "datasource": "Prometheus",
@@ -116,7 +167,7 @@
       "id": 6,
       "title": "Active Backend Instances",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 16 },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 24 },
       "targets": [
         {
           "datasource": "Prometheus",
@@ -129,7 +180,7 @@
           "thresholds": { "steps": [
             { "color": "red", "value": null },
             { "color": "yellow", "value": 1 },
-            { "color": "green", "value": 3 }
+            { "color": "green", "value": 2 }
           ]}
         }
       }
@@ -138,7 +189,7 @@
       "id": 7,
       "title": "P95 Latency (current)",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 16 },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 24 },
       "targets": [
         {
           "datasource": "Prometheus",
@@ -157,22 +208,24 @@
       }
     },
     {
-      "id": 8,
-      "title": "Error Rate (current)",
+      "id": 11,
+      "title": "Cache Hit Rate (current)",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 16 },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 24 },
       "targets": [
         {
           "datasource": "Prometheus",
-          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))",
-          "legendFormat": "5xx/s"
+          "expr": "rate(cache_hits_total[5m]) / (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m])) * 100",
+          "legendFormat": "Hit %"
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "reqps", "color": { "mode": "thresholds" },
+        "defaults": { "unit": "percent", "min": 0, "max": 100,
+          "color": { "mode": "thresholds" },
           "thresholds": { "steps": [
-            { "color": "green", "value": null },
-            { "color": "red", "value": 0.01 }
+            { "color": "red", "value": null },
+            { "color": "yellow", "value": 50 },
+            { "color": "green", "value": 80 }
           ]}
         }
       }

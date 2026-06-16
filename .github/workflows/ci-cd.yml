@@ -388,9 +388,11 @@ jobs:
           docker pull ghcr.io/ketanq4udev/testing_cicd-backend:main
           docker pull ghcr.io/ketanq4udev/testing_cicd-frontend:main
           docker pull ghcr.io/ketanq4udev/testing_cicd-loadbalancer:main
+          docker pull redis:7-alpine
           kind load docker-image ghcr.io/ketanq4udev/testing_cicd-backend:main
           kind load docker-image ghcr.io/ketanq4udev/testing_cicd-frontend:main
           kind load docker-image ghcr.io/ketanq4udev/testing_cicd-loadbalancer:main
+          kind load docker-image redis:7-alpine
 
       - name: Deploy to Kubernetes
         run: |
@@ -398,6 +400,7 @@ jobs:
           kubectl apply -f k8s/postgres/secret.yaml
           kubectl apply -f k8s/postgres/pvc.yaml
           kubectl apply -f k8s/postgres/deployment.yaml
+          kubectl apply -f k8s/redis/deployment.yaml
           kubectl apply -f k8s/backend/deployment.yaml
           kubectl apply -f k8s/backend/hpa.yaml
           kubectl apply -f k8s/frontend/deployment.yaml
