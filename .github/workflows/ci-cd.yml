@@ -76,40 +76,52 @@ jobs:
       - name: Start stack with 3 backend replicas
         run: docker compose up -d --build --scale backend=3
 
-      - name: Wait for load balancer to be ready
+      - name: Wait for HTTPS load balancer to be ready
         run: |
-          echo "Polling http://localhost/ ..."
+          echo "Polling https://localhost/ (self-signed, using -k) ..."
           for i in $(seq 1 30); do
-            if curl -sf http://localhost/ > /dev/null 2>&1; then
-              echo "Load balancer is up after $i attempt(s)"
+            if curl -sk https://localhost/ > /dev/null 2>&1; then
+              echo "Load balancer HTTPS is up after $i attempt(s)"
               break
             fi
             if [ "$i" -eq 30 ]; then
               echo "Timed out — dumping logs"
-              docker compose logs
+              docker compose logs loadbalancer
               exit 1
             fi
             echo "Attempt $i/30 — retrying in 5s..."
             sleep 5
           done
 
-      - name: Verify load balancer root
+      - name: Verify HTTP redirects to HTTPS
         run: |
-          response=$(curl -sf http://localhost/)
-          echo "LB response: $response"
+          status=$(curl -so /dev/null -w "%{http_code}" http://localhost/)
+          echo "HTTP status code: $status"
+          if [ "$status" != "301" ]; then
+            echo "FAIL: expected 301 redirect, got $status"
+            exit 1
+          fi
+          echo "PASS: HTTP → HTTPS redirect working"
+
+      - name: Verify HTTPS load balancer root
+        run: |
+          response=$(curl -sk https://localhost/)
+          echo "HTTPS LB response: $response"
           echo "$response" | grep -q "load-balancer"
+          echo "$response" | grep -q "tls"
+          echo "PASS: HTTPS endpoint returning correct response"
 
-      - name: Verify API is reachable through load balancer
+      - name: Verify API is reachable over HTTPS
         run: |
-          curl -sf http://localhost/api/items/ | grep -q "Item One"
-          echo "API items endpoint: OK"
+          curl -sk https://localhost/api/items/ | grep -q "Item One"
+          echo "PASS: API items endpoint reachable over HTTPS"
 
-      - name: Verify load balancing across replicas
+      - name: Verify load balancing across replicas (HTTPS)
         run: |
-          echo "Sending 9 health requests — collecting instance hostnames..."
+          echo "Sending 9 HTTPS health requests — collecting instance hostnames..."
           instances=""
           for i in $(seq 1 9); do
-            response=$(curl -sf http://localhost/health)
+            response=$(curl -sk https://localhost/health)
             host=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin)['instance'])")
             instances="$instances $host"
             echo "  Request $i → $host"
@@ -120,7 +132,7 @@ jobs:
             echo "FAIL: load balancing not distributing — only $unique instance(s) responded"
             exit 1
           fi
-          echo "PASS: load balancing confirmed across $unique instances"
+          echo "PASS: load balancing confirmed across $unique instances over HTTPS"
 
       - name: Verify Prometheus is healthy
         run: |
