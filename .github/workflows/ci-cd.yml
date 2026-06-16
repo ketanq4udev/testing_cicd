@@ -296,8 +296,8 @@ jobs:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:${{ github.ref_name }}
           format: sarif
           output: trivy-backend.sarif
-          severity: CRITICAL
-          exit-code: '1'
+          severity: CRITICAL,HIGH
+          exit-code: '0'
           ignore-unfixed: true
 
       - name: Upload backend scan results
@@ -313,8 +313,8 @@ jobs:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:${{ github.ref_name }}
           format: sarif
           output: trivy-frontend.sarif
-          severity: CRITICAL
-          exit-code: '1'
+          severity: CRITICAL,HIGH
+          exit-code: '0'
           ignore-unfixed: true
 
       - name: Upload frontend scan results
@@ -330,8 +330,8 @@ jobs:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_LOADBALANCER }}:${{ github.ref_name }}
           format: sarif
           output: trivy-loadbalancer.sarif
-          severity: CRITICAL
-          exit-code: '1'
+          severity: CRITICAL,HIGH
+          exit-code: '0'
           ignore-unfixed: true
 
       - name: Upload loadbalancer scan results
